@@ -16,8 +16,7 @@ import android.text.TextUtils
 import android.util.Log
 import org.xmlpull.v1.XmlPullParserException
 import android.os.Build
-import android.view.LayoutInflater
-import android.view.ViewGroup
+import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
 import android.view.View
 
@@ -44,10 +43,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Inicializei as views titulo e data e a RecyclerView
+        // Inicializa as views: titulo, dados e a RecyclerView
         conteudoRSS = findViewById<View>(R.id.conteudoRSS) as RecyclerView
         feedTitle = findViewById<View>(R.id.item_titulo) as? TextView
         feedData = findViewById<View>(R.id.item_data) as? TextView
+
+        // Seta o layout manager
+        conteudoRSS!!.setLayoutManager(LinearLayoutManager(this))
 
         // Isso corrigiu um NetworkException que tava dando
         if (Build.VERSION.SDK_INT > 9) {
@@ -68,7 +70,7 @@ class MainActivity : Activity() {
     }
 
     //Opcional - pesquise outros meios de obter arquivos da internet - bibliotecas, etc.
-    // NAO USO
+    //O erro de memoria tava dando no "out.write" dessa função.
     @Throws(IOException::class)
     private fun getRssFeed(feed: String): String {
         var inp: InputStream? = null
@@ -96,7 +98,7 @@ class MainActivity : Activity() {
     private inner class FeedTask : AsyncTask<Void, Int, Boolean>() {
 
         // Essa lista vai ser jogada no Adapter
-        var items: List<ItemRSS>? = null
+        var items: List<ItemRSS> = arrayListOf()
 
         override fun onPreExecute() {
             feedTitle = null
@@ -105,31 +107,21 @@ class MainActivity : Activity() {
             feedData?.text = "Feed Data: $feedData"
         }
 
-        // Aqui eu usei o mesmo método getRSSFeed modificado pra usar o Parser
+        // Download do Feed
         override fun doInBackground(vararg void: Void): Boolean? {
 
-            var urlLink: String? = RSS_FEED
-            var rssFeed: String
-
-            if (TextUtils.isEmpty(urlLink))
-                return false
+            var urlLink: String = RSS_FEED
 
             try {
-                if (!urlLink!!.startsWith("http://") && !urlLink!!.startsWith("https://"))
-                    urlLink = "http://" + urlLink!!
+                if (!urlLink.startsWith("http://") && !urlLink.startsWith("https://"))
+                    urlLink = "http://$urlLink"
 
                 val url = URL(urlLink)
+                // Essa parte substituiu o getRssFeed
                 val inputStream = url.openConnection().getInputStream()
-                val out = ByteArrayOutputStream()
-                val buffer = ByteArray(1024)
-                var count: Int
-                count = inputStream!!.read(buffer)
-                while (count != -1) {
-                    out.write(buffer, 0, count)
-                }
-                val response = out.toByteArray()
-                rssFeed = String(response, charset("UTF-8"))
-                items = ParserRSS.parse(rssFeed)
+                // Transforma o inputStream em String
+                val inputAsString = inputStream.bufferedReader().use { it.readText() }
+                items = ParserRSS.parse(inputAsString)
                 return true
             } catch (e: IOException) {
                 Log.e(ContentValues.TAG, "Error", e)
@@ -139,35 +131,14 @@ class MainActivity : Activity() {
             return false
         }
 
-        // Aqui eu alimento a RecyclerView
+        // Alimenta a RecyclerView
         override fun onPostExecute(success: Boolean?) {
             if (success!!) {
                 feedTitle?.text = "Feed Title: $feedTitle"
                 feedData?.text = "Feed Data: $feedData"
-                conteudoRSS?.adapter = items?.let { RssFeedListAdapter(it) }
+                conteudoRSS?.adapter = RssFeedAdapter(items)
             }
         }
     }
 }
 
-// Tenho pressentimento que esse adapter vai dar erro se o download passar
-class RssFeedListAdapter(private val mRssFeedModels: List<ItemRSS>) : RecyclerView.Adapter<RssFeedListAdapter.FeedModelViewHolder>() {
-
-    class FeedModelViewHolder(val rssFeedView: View) : RecyclerView.ViewHolder(rssFeedView)
-
-    override fun onCreateViewHolder(parent: ViewGroup, type: Int): FeedModelViewHolder {
-        val v = LayoutInflater.from(parent.context)
-                .inflate(R.layout.itemlista, parent, false)
-        return FeedModelViewHolder(v)
-    }
-
-    override fun onBindViewHolder(holder: FeedModelViewHolder, position: Int) {
-        val rssFeedModel = mRssFeedModels[position]
-        (holder.rssFeedView.findViewById(R.id.item_titulo) as TextView).text = rssFeedModel.title
-        (holder.rssFeedView.findViewById(R.id.item_data) as TextView).text = rssFeedModel.description
-    }
-
-    override fun getItemCount(): Int {
-        return mRssFeedModels.size
-    }
-}
